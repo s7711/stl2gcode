@@ -1,5 +1,7 @@
 # stl2gcode - Swift Box
 
+**Live tool: https://s7711.github.io/stl2gcode/**
+
 A browser tool that turns a flattened, nested panel-layout STL (the kind
 SketchUp exports once you've laid all your parts out flat, ready to cut) into
 G-code for a Duet/RepRapFirmware CNC router. Drag in the STL, tune a few
