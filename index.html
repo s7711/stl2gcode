@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>stl2gcode - Swift Box</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: #f7f7f8; color: #1a1a1a; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #666; margin-bottom: 20px; font-size: 13px; }
+  .layout { display: flex; gap: 20px; flex-wrap: wrap; }
+  .panel { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; }
+  #dropZone {
+    border: 2px dashed #999; border-radius: 8px; padding: 30px; text-align: center;
+    cursor: pointer; color: #555; margin-bottom: 16px; background: #fff;
+  }
+  #dropZone.drag { border-color: #2b6cb0; background: #ebf4ff; }
+  fieldset { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 12px; }
+  legend { font-weight: 600; font-size: 13px; }
+  label { display: block; font-size: 12px; margin-top: 8px; color: #333; }
+  label span.hint { color: #888; font-weight: normal; }
+  input[type=number], select { width: 100%; padding: 4px; box-sizing: border-box; margin-top: 2px; }
+  button { padding: 10px 14px; border: none; border-radius: 6px; background: #2b6cb0; color: #fff;
+    font-size: 14px; cursor: pointer; margin-top: 8px; margin-right: 8px; }
+  button:hover { background: #2c5282; }
+  #status { white-space: pre-wrap; font-family: monospace; font-size: 12px; background: #f0f0f0;
+    padding: 8px; border-radius: 6px; min-height: 60px; }
+  #preview { background: #fff; border: 1px solid #ddd; border-radius: 6px; }
+  .legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Swift box: STL &rarr; G-code</h1>
+<div class="sub">Drop the flattened panel-layout STL below. Everything runs locally in this page - nothing is uploaded anywhere.</div>
+
+<div class="layout">
+  <div class="panel" style="flex: 1; min-width: 320px;">
+    <div id="dropZone">Drop STL here, or click to choose a file<br><input type="file" id="fileInput" accept=".stl" style="display:none"></div>
+
+    <canvas id="preview" width="480" height="260"></canvas>
+    <div style="font-size:12px; margin-top:6px;">
+      <span class="legend-swatch" style="background:#2b6cb0"></span>Part outline
+      <span class="legend-swatch" style="background:#e53e3e"></span>Hold-down hole (Program 1)
+      <span class="legend-swatch" style="background:#dd6b20"></span>Feature hole (Program 2)
+      <span class="legend-swatch" style="background:#38a169"></span>Pocket - not through (Program 2)
+      <br>Work origin, with X/Y axis arrows
+    </div>
+
+    <div id="status" style="margin-top: 12px;"></div>
+  </div>
+
+  <div class="panel" style="flex: 1; min-width: 280px;">
+    <fieldset>
+      <legend>Tool</legend>
+      <label>Diameter (mm)
+        <input type="number" id="toolDiameter" value="3.175" step="0.001">
+      </label>
+      <label>Shape
+        <select id="toolShape">
+          <option value="flat" selected>Flat end mill</option>
+          <option value="ball" disabled>Ball nose (not yet supported)</option>
+          <option value="vbit" disabled>V-bit (not yet supported)</option>
+        </select>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Cutting depth</legend>
+      <label>Material thickness (mm) <span class="hint">auto-read from STL</span>
+        <input type="number" id="materialThickness" value="9" step="0.01">
+      </label>
+      <label>Stepdown per pass (mm)
+        <input type="number" id="stepdown" value="3.2" step="0.1">
+      </label>
+      <label>Cut-through extra (mm) <span class="hint">guarantees a clean break-through</span>
+        <input type="number" id="cutThroughExtra" value="0.3" step="0.05">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Ramp / rough cut</legend>
+      <label>Ramp entry angle (degrees) <span class="hint">descends into each pass along the path instead of plunging straight down; circular holes helix in a single turn regardless of this setting</span>
+        <input type="number" id="rampAngle" value="10" step="1" min="1" max="45">
+      </label>
+      <label>Rough pass extra offset (mm) <span class="hint">cuts a rough pass this far outside/inside the true line first, then a finish pass at the true line - set to 0 to disable and cut a single finish pass. Automatically skipped on features too small to leave room for it (e.g. the small hold-down holes).</span>
+        <input type="number" id="roughingExtra" value="0.75" step="0.05" min="0">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Feeds</legend>
+      <label>Cutting feed rate (mm/min) <span class="hint">no coolant - keep conservative</span>
+        <input type="number" id="feedRate" value="1500" step="50">
+      </label>
+      <label>Plunge rate (mm/min)
+        <input type="number" id="plungeRate" value="500" step="25">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Travel</legend>
+      <label>Safe travel height (mm above Z0) <span class="hint">Program 2 runs with screws in - must clear the heads</span>
+        <input type="number" id="safeZ" value="5" step="0.5">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Pockets</legend>
+      <label>Stepover (% of tool diameter) <span class="hint">between raster passes when clearing pocket interiors - not used for outline/hole perimeter cuts, those are always a single pass</span>
+        <input type="number" id="pocketStepover" value="35" step="5" min="10" max="95">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Hold-down holes</legend>
+      <label>Small-hole area cutoff (mm&sup2;) <span class="hint">anything smaller = hold-down screw hole</span>
+        <input type="number" id="holeThreshold" value="30" step="1">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Work origin</legend>
+      <label>Origin X (mm) <span class="hint">auto-set to stock corner - edit if your zero differs</span>
+        <input type="number" id="originX" value="0" step="0.01">
+      </label>
+      <label>Origin Y (mm)
+        <input type="number" id="originY" value="0" step="0.01">
+      </label>
+    </fieldset>
+
+    <button id="downloadHoles">Download 01_holddown_holes.gcode</button>
+    <button id="downloadOutlines">Download 02_outlines.gcode</button>
+  </div>
+</div>
+
+<script src="js/stl-parser.js"></script>
+<script src="js/offset.js"></script>
+<script src="js/geometry.js"></script>
+<script src="js/pocket.js"></script>
+<script src="js/gcode.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
