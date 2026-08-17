@@ -10,6 +10,26 @@ settings, download two G-code files, cut.
 No install, no server - `index.html` runs entirely in your browser. Nothing
 you load or generate leaves your machine.
 
+## Background
+
+This started from a simple annoyance: a SketchUp design has no way to get its
+geometry onto a CNC machine without either re-drawing it in a CAM package or
+hand-entering every vertex's coordinates. Fusion 360 can do the job, but its
+lead-in/lead-out entry style doesn't suit wood well, and its rough+finish and
+ramped-entry features - genuinely useful ones - come wrapped in a lot of CAM
+machinery for what's fundamentally a flat-panel box. This tool exists to do
+just the flat-panel case, directly from an STL, with those specific
+techniques (ramped entry, rough+finish passes, round-joined corners) built in
+because they're what actually mattered for cutting this box on a Workbee -
+not because they're a complete CAM feature set.
+
+A few physical realities shaped it directly: the router is manually switched
+(no spindle control in the G-code), the machine isn't rigid enough to trust a
+full-width finishing cut every time (hence rough+finish as a real option, not
+just a nice-to-have), and the hold-down screw holes exist because the sheet
+needs pinning down before the heavier outline cuts run - which is also why
+there are two separate G-code programs instead of one.
+
 ## What it assumes about your STL
 
 This is **not** a general-purpose CAM tool. It expects a specific, simple
